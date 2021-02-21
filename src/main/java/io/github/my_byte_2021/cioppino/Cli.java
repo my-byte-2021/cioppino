@@ -4,6 +4,7 @@ import com.lowagie.text.Document;
 import com.lowagie.text.Image;
 import com.lowagie.text.PageSize;
 import com.lowagie.text.Rectangle;
+import com.lowagie.text.pdf.PdfContentByte;
 import com.lowagie.text.pdf.PdfWriter;
 import picocli.CommandLine;
 import picocli.CommandLine.Option;
@@ -14,6 +15,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.concurrent.Callable;
+import java.util.stream.Stream;
 
 import static java.lang.String.format;
 
@@ -23,6 +25,9 @@ public class Cli implements Callable<Integer> {
 
     @Option(names = {"--overwrite", "-W"}, description = "overwrite output file")
     private boolean overwrite;
+
+    @Option(names = "--no-toc", description = "skip generating table of content")
+    private boolean noToc;
 
     @Option(names = "--debug", hidden = true)
     private boolean debug;
@@ -35,6 +40,7 @@ public class Cli implements Callable<Integer> {
 
     @Override
     public Integer call() throws Exception {
+        files = cleanFiles();
         try {
             mergeImages();
         } catch (Exception e) {
@@ -54,11 +60,12 @@ public class Cli implements Callable<Integer> {
 
         log("Generating %s...", output);
         Document document = new Document(PageSize.A4, 0, 0, 0, 0);
-        PdfWriter.getInstance(document, new FileOutputStream(output));
+        PdfWriter writer = PdfWriter.getInstance(document, new FileOutputStream(output));
         document.open();
 
-        if (!skipSort) {
-            Arrays.sort(files);
+        if (!noToc) {
+            PdfContentByte cb = writer.getDirectContent();
+            writer.setPageEvent(new TocSupport(files, cb.getRootOutline()));
         }
 
         for (File file : files) {
@@ -73,6 +80,13 @@ public class Cli implements Callable<Integer> {
 
         document.close();
         log("Done.");
+    }
+
+    private File[] cleanFiles() {
+        Stream<File> stream = Arrays.stream(files)
+                .map(File::getAbsoluteFile)
+                .filter(f -> f.getName().toLowerCase().matches(".+\\.(jpg|jpeg|png|gif)"));
+        return skipSort ? stream.toArray(File[]::new) : stream.sorted().toArray(File[]::new);
     }
 
     public static void main(String[] args) {
